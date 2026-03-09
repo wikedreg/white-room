@@ -1,21 +1,23 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import json
-import random
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="SME - Blank Mode", page_icon="♟️", layout="wide")
+# --- CONFIGURACIÓN Y DATOS ---
+st.set_page_config(page_title="SME - High Performance", page_icon="♟️", layout="wide")
 
-# --- SISTEMA DE DATOS ---
 def load_data():
     try:
         with open('data.json', 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        return {"stats": {"STR": 0, "INT": 0, "CHA": 0, "RES": 0}, "logs": []}
+        return {
+            "stats": {"STR": 0, "INT": 0, "CHA": 0, "RES": 0},
+            "peso_historial": [{"fecha": "2026-03-08", "peso": 55.0}],
+            "rutinas": {dia: "" for dia in ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]},
+            "consumo_proteina": []
+        }
 
 def save_data(data):
     with open('data.json', 'w') as f:
@@ -23,86 +25,79 @@ def save_data(data):
 
 data = load_data()
 
-# --- LÓGICA DEL MODO DESAFÍO SORA ---
-def get_sora_challenge():
-    challenges = [
-        {"pilar": "INT", "desc": "Explica un concepto de .NET a alguien (o un pato de goma) de forma simple.", "bonus": 25},
-        {"pilar": "INT", "desc": "Refactoriza un código viejo o resuelve un ejercicio de lógica en Python.", "bonus": 30},
-        {"pilar": "CHA", "desc": "Escucha a alguien sin interrumpir ni dar soluciones por 5 minutos.", "bonus": 40},
-        {"pilar": "CHA", "desc": "Analiza el lenguaje corporal de 3 personas hoy y deduce su estado de ánimo.", "bonus": 35},
-        {"pilar": "RES", "desc": "Realiza esa tarea que has estado procrastinando durante 20 minutos.", "bonus": 50},
-        {"pilar": "STR", "desc": "Récord personal: Haz una repetición extra o añade peso en tu ejercicio principal.", "bonus": 45},
-    ]
-    return random.choice(challenges)
+# --- CÁLCULO DE METAS (Basado en tus 1.85m y 55kg) ---
+peso_actual = data["peso_historial"][-1]["peso"]
+meta_proteina = round(peso_actual * 2.0, 1) # Meta estándar para ganar masa: 2g por kilo
 
-# --- INTERFAZ PRINCIPAL ---
-st.title("♟️ Sistema de Monitoreo de Estrategia")
-nivel_actual = np.sqrt(sum(data['stats'].values())) / 10
-st.markdown(f"**Usuario:** Santos | **Rango:** Nivel {nivel_actual:.2f}")
+# --- INTERFAZ ---
+st.title("♟️ Sistema de Monitoreo de Estrategia v1.5")
 
-# Dashboard de Stats
-stats = data["stats"]
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("STR (Físico)", f"{stats['STR']} XP")
-c2.metric("INT (Mente)", f"{stats['INT']} XP")
-c3.metric("CHA (Social)", f"{stats['CHA']} XP")
-c4.metric("RES (Espíritu)", f"{stats['RES']} XP")
+tabs = st.tabs(["🏋️ Rutinas y Gym", "🥩 Nutrición y Macros", "📊 Progreso General"])
 
-st.divider()
-
-# --- REGISTRO Y DESAFÍOS ---
-col_reg, col_sora = st.columns(2)
-
-with col_reg:
-    st.subheader("📝 Registrar Avance")
-    m_type = st.selectbox("Tipo de Misión", ["STR", "INT", "CHA", "RES"])
-    xp = st.number_input("XP base", min_value=1, max_value=100, value=10)
-    note = st.text_input("Nota del protocolo")
-    if st.button("Confirmar Ejecución"):
-        data["stats"][m_type] += xp
-        data["logs"].append({"date": datetime.now().strftime("%Y-%m-%d %H:%M"), "type": m_type, "xp": xp, "note": note})
-        save_data(data)
-        st.success("Dato almacenado en el sistema.")
-        st.rerun()
-
-with col_sora:
-    st.subheader("🎲 Desafío de Los Blancos")
-    if 'current_challenge' not in st.session_state:
-        st.session_state.current_challenge = None
+# --- TAB 1: RUTINAS SEMANALES ---
+with tabs[0]:
+    st.header("📋 Plan de Entrenamiento Semanal")
+    col1, col2 = st.columns(2)
     
-    if st.button("Generar Reto"):
-        st.session_state.current_challenge = get_sora_challenge()
-    
-    if st.session_state.current_challenge:
-        c = st.session_state.current_challenge
-        st.warning(f"**{c['pilar']}:** {c['desc']}")
-        if st.button("✅ ¡Desafío Cumplido!"):
-            data["stats"][c["pilar"]] += c["bonus"]
-            data["logs"].append({"date": datetime.now().strftime("%Y-%m-%d %H:%M"), "type": c["pilar"], "xp": c["bonus"], "note": f"RETO CUMPLIDO: {c['desc']}"})
+    dias = list(data["rutinas"].keys())
+    with col1:
+        dia_sel = st.selectbox("Selecciona el día para editar rutina:", dias)
+        nueva_rutina = st.text_area(f"Rutina para el {dia_sel}:", data["rutinas"].get(dia_sel, ""))
+        if st.button("Guardar Rutina"):
+            data["rutinas"][dia_sel] = nueva_rutina
             save_data(data)
-            st.session_state.current_challenge = None
-            st.balloons()
-            st.rerun()
+            st.success(f"Rutina de {dia_sel} actualizada.")
 
-# --- ANÁLISIS VISUAL ---
-st.sidebar.title("📊 Laboratorio de Datos")
-if st.sidebar.checkbox("Mostrar Análisis de Radar"):
-    st.write("### Gráfico de Atributos")
-    categories = ['STR', 'INT', 'CHA', 'RES']
-    values = [data["stats"][c] for c in categories]
-    angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
-    values += values[:1]
-    angles += angles[:1]
+    with col2:
+        st.subheader("Tu semana de un vistazo")
+        for d in dias:
+            if data["rutinas"][d]:
+                st.write(f"**{d}:** {data['rutinas'][d]}")
+
+# --- TAB 2: CALCULADORA Y REGISTRO DE PROTEÍNAS ---
+with tabs[1]:
+    st.header("🥩 Seguimiento de Nutrición")
     
-    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
-    ax.fill(angles, values, color='#ff4b4b', alpha=0.3)
-    ax.plot(angles, values, color='#ff4b4b', marker='o')
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(categories)
-    st.pyplot(fig)
+    col_calc, col_log = st.columns(2)
+    
+    with col_calc:
+        st.subheader("Calculadora de Ingesta")
+        st.metric("Tu Meta Diaria de Proteína", f"{meta_proteina}g", delta="Para ganar masa")
+        
+        alimento = st.text_input("Alimento (ej: Pechuga de pollo, Batido)")
+        gramos_pro = st.number_input("Gramos de proteína en esta comida:", 0, 100, 25)
+        hora_consumo = st.time_input("¿A qué hora lo consumiste?", datetime.now())
+        
+        if st.button("Registrar Consumo"):
+            nuevo_log = {
+                "fecha": datetime.now().strftime("%Y-%m-%d"),
+                "hora": hora_consumo.strftime("%H:%M"),
+                "alimento": alimento,
+                "gramos": gramos_pro
+            }
+            data["consumo_proteina"].append(nuevo_log)
+            save_data(data)
+            st.success("Proteína registrada en el sistema.")
 
-if st.sidebar.checkbox("Ver Historial Log"):
-    if not data["logs"]:
-        st.info("Aún no hay registros en la base de datos.")
-    else:
-        st.dataframe(pd.DataFrame(data["logs"]).sort_index(ascending=False))
+    with col_log:
+        st.subheader("Consumo de Hoy")
+        hoy = datetime.now().strftime("%Y-%m-%d")
+        df_hoy = pd.DataFrame([c for c in data["consumo_proteina"] if c["fecha"] == hoy])
+        
+        if not df_hoy.empty:
+            st.table(df_hoy[["hora", "alimento", "gramos"]])
+            total_hoy = df_hoy["gramos"].sum()
+            progreso = total_hoy / meta_proteina
+            st.progress(min(progreso, 1.0))
+            st.write(f"Total hoy: {total_hoy}g / {meta_proteina}g")
+        else:
+            st.info("Aún no has registrado proteínas hoy.")
+
+# --- TAB 3: PROGRESO ---
+with tabs[2]:
+    st.subheader("📈 Evolución Física")
+    df_peso = pd.DataFrame(data["peso_historial"])
+    fig_peso, ax_peso = plt.subplots(figsize=(10, 4))
+    ax_peso.plot(df_peso["fecha"], df_peso["peso"], marker='o', color='#00ff41')
+    ax_peso.set_title("Progreso de Peso (Meta: Ganar Masa)")
+    st.pyplot(fig_peso)
