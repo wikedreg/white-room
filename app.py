@@ -1,23 +1,26 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import json
+import random
 from datetime import datetime
 
-# --- CONFIGURACIÓN Y DATOS ---
-st.set_page_config(page_title="SME - High Performance", page_icon="♟️", layout="wide")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="SME - Full Adaptive", page_icon="♟️", layout="wide")
 
 def load_data():
     try:
         with open('data.json', 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        # Iniciamos con tus datos actuales
         return {
             "stats": {"STR": 0, "INT": 0, "CHA": 0, "RES": 0},
+            "logs": [],
             "peso_historial": [{"fecha": datetime.now().strftime("%Y-%m-%d"), "peso": 62.0}],
             "rutinas": {dia: "" for dia in ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]},
-            "consumo_proteina": []
+            "consumo_proteina": [],
+            "horario_diario": []
         }
 
 def save_data(data):
@@ -25,92 +28,104 @@ def save_data(data):
         json.dump(data, f)
 
 data = load_data()
-
-# --- CÁLCULO DE METAS DINÁMICAS ---
-# El sistema ahora toma el último peso registrado para calcular la meta
 peso_actual = data["peso_historial"][-1]["peso"]
-meta_proteina = round(peso_actual * 2.0, 1) 
+meta_proteina_base = round(peso_actual * 2.0, 1)
+
+# --- DETECCIÓN DE DÍA ---
+dias_map = {"Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miércoles", 
+            "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sábado", "Sunday": "Domingo"}
+dia_hoy_en = datetime.now().strftime("%A")
+dia_hoy_es = dias_map.get(dia_hoy_en, "Lunes")
 
 # --- INTERFAZ ---
-st.title("♟️ Sistema de Monitoreo de Estrategia v1.6")
+st.title("♟️ Sistema de Monitoreo de Estrategia v2.2")
+nivel = np.sqrt(sum(data['stats'].values())) / 10
+st.markdown(f"**Estratega:** Santos | **Nivel:** {nivel:.2f} | **Día:** {dia_hoy_es}")
 
-tabs = st.tabs(["🏋️ Rutinas y Gym", "🥩 Nutrición y Alertas", "📊 Progreso Físico"])
+tabs = st.tabs(["🕒 Protocolo Diario", "🏀 Modo Evento", "🥩 Nutrición", "📊 Atributos"])
 
-# --- TAB 1: RUTINAS SEMANALES ---
+# --- TAB 1: PROTOCOLO DIARIO (LINEA DE TIEMPO) ---
 with tabs[0]:
-    st.header("📋 Plan de Entrenamiento")
-    col1, col2 = st.columns(2)
-    dias = list(data["rutinas"].keys())
-    with col1:
-        dia_sel = st.selectbox("Selecciona el día para editar rutina:", dias)
-        nueva_rutina = st.text_area(f"Rutina para el {dia_sel}:", data["rutinas"].get(dia_sel, ""))
-        if st.button("Guardar Rutina"):
-            data["rutinas"][dia_sel] = nueva_rutina
+    st.subheader(f"📅 Cronograma: {dia_hoy_es}")
+    
+    with st.expander("➕ Gestionar Bloques de Tiempo"):
+        col_h, col_a, col_i = st.columns([1, 2, 1])
+        rango = col_h.text_input("Rango (ej. 07:00 - 14:00)")
+        act = col_a.text_input("Actividad")
+        ico = col_i.selectbox("Icono", ["🎓", "🚶", "🥩", "🏋️", "🏀", "💻", "😴", "📚"])
+        if st.button("Añadir al Horario"):
+            data["horario_diario"].append({"hora": rango, "actividad": act, "icono": ico, "dia": dia_hoy_es})
             save_data(data)
-            st.success(f"Rutina de {dia_sel} actualizada.")
-    with col2:
-        st.subheader("Tu semana de un vistazo")
-        for d in dias:
-            if data["rutinas"][d]:
-                st.info(f"**{d}:** {data['rutinas'][d]}")
+            st.rerun()
 
-# --- TAB 2: NUTRICIÓN Y ALERTAS ---
-with tabs[1]:
-    st.header("🥩 Seguimiento de Nutrición")
+    # Mostrar Timeline filtrada por el día actual
+    horario_hoy = [h for h in data["horario_diario"] if h.get("dia") == dia_hoy_es]
+    if horario_hoy:
+        for item in horario_hoy:
+            st.write(f"**{item['hora']}** | {item['icono']} {item['actividad']}")
+    else:
+        st.info("No hay actividades registradas para hoy.")
     
-    col_calc, col_log = st.columns(2)
-    
-    with col_calc:
-        st.subheader("Registro de Ingesta")
-        # Alerta visual de meta
-        st.metric("Tu Meta de Proteína", f"{meta_proteina}g", delta=f"Basado en tus {peso_actual}kg")
-        
-        alimento = st.text_input("Alimento (ej: Batido, Pollo, Tacos)")
-        gramos_pro = st.number_input("Gramos de proteína:", 0, 100, 25)
-        hora_consumo = st.time_input("Hora del consumo", datetime.now())
-        
-        if st.button("Registrar Consumo"):
-            nuevo_log = {
-                "fecha": datetime.now().strftime("%Y-%m-%d"),
-                "hora": hora_consumo.strftime("%H:%M"),
-                "alimento": alimento,
-                "gramos": gramos_pro
-            }
-            data["consumo_proteina"].append(nuevo_log)
-            save_data(data)
-            st.success("Proteína registrada.")
-
-    with col_log:
-        st.subheader("Estado de Hoy")
-        hoy = datetime.now().strftime("%Y-%m-%d")
-        logs_hoy = [c for c in data["consumo_proteina"] if c["fecha"] == hoy]
-        total_hoy = sum(log["gramos"] for log in logs_hoy)
-        
-        # Lógica de Alertas
-        if total_hoy < meta_proteina * 0.5:
-            st.error(f"⚠️ Alerta: Estás muy bajo en proteína ({total_hoy}g). ¡Necesitas comer!")
-        elif total_hoy < meta_proteina:
-            st.warning(f"⚡ Casi llegas: Te faltan {round(meta_proteina - total_hoy, 1)}g para tu meta.")
-        else:
-            st.success(f"🏆 ¡Meta cumplida! Has consumido {total_hoy}g. Hipertrofia asegurada.")
-            st.balloons()
-            
-        if logs_hoy:
-            st.table(pd.DataFrame(logs_hoy)[["hora", "alimento", "gramos"]])
-
-# --- TAB 3: PROGRESO ---
-with tabs[2]:
-    st.subheader("📈 Evolución de Masa Muscular")
-    
-    # Permitir actualizar peso rápido
-    nuevo_peso = st.number_input("Registrar nuevo peso (kg):", 40.0, 120.0, float(peso_actual))
-    if st.button("Actualizar Historial de Peso"):
-        data["peso_historial"].append({"fecha": datetime.now().strftime("%Y-%m-%d"), "peso": nuevo_peso})
+    if st.button("🗑️ Limpiar Horario del Día"):
+        data["horario_diario"] = [h for h in data["horario_diario"] if h.get("dia") != dia_hoy_es]
         save_data(data)
         st.rerun()
 
-    df_peso = pd.DataFrame(data["peso_historial"])
-    fig_peso, ax_peso = plt.subplots(figsize=(10, 4))
-    ax_peso.plot(df_peso["fecha"], df_peso["peso"], marker='o', color='#00ff41', linewidth=2)
-    ax_peso.set_ylabel("Peso (kg)")
-    st.pyplot(fig_peso)
+# --- TAB 2: MODO EVENTO (ESPECIAL FIN DE SEMANA) ---
+with tabs[1]:
+    if dia_hoy_es in ["Sábado", "Domingo"]:
+        st.warning("⚠️ **ALERTA DE FIN DE SEMANA DETECTADA**")
+        st.subheader("¿Hay partido de Básquetbol o Entrenamiento Extra hoy?")
+        
+        col_b1, col_b2 = st.columns(2)
+        if col_b1.button("🏀 SÍ, HAY PARTIDO"):
+            st.session_state.evento_activo = "Básquet"
+            st.success("Modo Básquet Activado: Meta de hidratación y carbohidratos aumentada.")
+        if col_b2.button("🏋️ SÍ, GYM EXTRA"):
+            st.session_state.evento_activo = "Gym"
+            st.success("Modo Hipertrofia Activado: Meta de proteína +20g.")
+    else:
+        st.info("El Modo Evento se activa automáticamente los fines de semana, pero puedes forzarlo si tienes un partido entre semana.")
+        if st.button("🚀 Forzar Modo Evento"):
+            st.session_state.evento_activo = "Extra"
+
+    if 'evento_activo' in st.session_state:
+        st.write(f"**Evento Actual:** {st.session_state.evento_activo}")
+        if st.button("✅ Finalizar Evento y Ganar XP"):
+            data["stats"]["STR"] += 40
+            data["stats"]["RES"] += 20
+            save_data(data)
+            del st.session_state.evento_activo
+            st.balloons()
+            st.rerun()
+
+# --- TAB 3: NUTRICIÓN ---
+with tabs[2]:
+    # Ajuste de meta si hay evento
+    ajuste_pro = 20 if st.session_state.get('evento_activo') == "Gym" else 0
+    meta_final = meta_proteina_base + ajuste_pro
+    
+    st.header("🥩 Registro de Proteína Uni")
+    c1, c2, c3, c4 = st.columns(4)
+    if c1.button("🌮 Tacos (4)"): data["consumo_proteina"].append({"fecha": datetime.now().strftime("%Y-%m-%d"), "gramos": 32, "item": "Tacos"}); save_data(data)
+    if c2.button("🥪 Torta"): data["consumo_proteina"].append({"fecha": datetime.now().strftime("%Y-%m-%d"), "gramos": 28, "item": "Torta"}); save_data(data)
+    if c3.button("🌯 Burrito"): data["consumo_proteina"].append({"fecha": datetime.now().strftime("%Y-%m-%d"), "gramos": 24, "item": "Burrito"}); save_data(data)
+    if c4.button("🧀 Gringa"): data["consumo_proteina"].append({"fecha": datetime.now().strftime("%Y-%m-%d"), "gramos": 26, "item": "Gringa"}); save_data(data)
+
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    total_hoy = sum(log["gramos"] for log in data["consumo_proteina"] if log["fecha"] == hoy)
+    st.metric("Proteína Acumulada", f"{total_hoy}g / {meta_final}g", delta=f"+{ajuste_pro}g por evento" if ajuste_pro > 0 else None)
+    st.progress(min(total_hoy/meta_final, 1.0))
+
+# --- TAB 4: ATRIBUTOS (RADAR) ---
+with tabs[3]:
+    st.subheader("📊 Perfil del Jugador")
+    categories = ['STR', 'INT', 'CHA', 'RES']
+    values = [data["stats"].get(c, 0) for c in categories]
+    angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
+    values += values[:1]; angles += angles[:1]
+    fig, ax = plt.subplots(figsize=(3, 3), subplot_kw=dict(polar=True))
+    ax.fill(angles, values, color='#ff4b4b', alpha=0.3)
+    ax.plot(angles, values, color='#ff4b4b', marker='o')
+    ax.set_xticks(angles[:-1]); ax.set_xticklabels(categories)
+    st.pyplot(fig)
